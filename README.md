@@ -545,3 +545,109 @@ kubectl apply -f service.yaml
 - **Kubernetes configuration**: Set up Deployment and Service for the Flask server.
 
 By following these steps, you can connect your Angular application to a Kubernetes pod and send the collected data to execute a Python file in the pod.
+
+4. I will be running a new pod for Angular, which will reside on the same server as where I'm running my Python code pod. Give me deployment.yaml file configuration for the angular project
+
+To create a Kubernetes `deployment.yaml` file for your Angular project, assuming it's containerized and you're deploying it to the same Kubernetes cluster where your Python code pod is running, you need to specify the configuration that will create and manage the Angular pod.
+
+Here’s a sample `deployment.yaml` configuration for deploying your Angular application:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: angular-app-deployment
+  labels:
+    app: angular-app
+spec:
+  replicas: 1 # Number of desired pods
+  selector:
+    matchLabels:
+      app: angular-app
+  template:
+    metadata:
+      labels:
+        app: angular-app
+    spec:
+      containers:
+        - name: angular-app-container
+          image: your-angular-app-image:latest # Replace with your Docker image name
+          ports:
+            - containerPort: 80 # Assuming the Angular app serves on port 80
+          env:
+            - name: API_BASE_URL # Example environment variable
+              value: "http://your-python-service" # URL to your Python service
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "250m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: angular-app-service
+  labels:
+    app: angular-app
+spec:
+  type: ClusterIP
+  selector:
+    app: angular-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+```
+
+### Explanation:
+
+1. **Deployment**:
+
+   - **replicas**: Specifies the number of pod instances to run. In this case, it’s set to `1`.
+   - **selector**: Ensures that the deployment manages only the pods with the `app: angular-app` label.
+   - **template**: Defines the pod template that will be used to create pods. It includes:
+     - **containers**: Specifies the container configuration, including the Docker image, ports, and environment variables.
+     - **image**: Replace `your-angular-app-image:latest` with your actual Angular Docker image.
+     - **ports**: Defines the container port (usually `80` for web apps).
+     - **env**: An example of setting environment variables (e.g., `API_BASE_URL` for connecting to the Python service).
+     - **resources**: Optionally defines resource requests and limits.
+     - **livenessProbe** and **readinessProbe**: These ensure the pod is running and ready to accept traffic.
+
+2. **Service**:
+   - **type**: `ClusterIP` makes the service accessible only within the cluster. Change this to `NodePort` or `LoadBalancer` if you need external access.
+   - **selector**: Maps the service to pods with the `app: angular-app` label.
+   - **ports**: Maps the service port (`80`) to the target container port (`80`).
+
+### Usage:
+
+1. **Build Your Angular Docker Image**:
+   Make sure your Angular project is containerized and the Docker image is available in a registry accessible by your Kubernetes cluster.
+
+2. **Deploy the Angular App**:
+   Apply the deployment file with:
+
+   ```bash
+   kubectl apply -f deployment.yaml
+   ```
+
+3. **Accessing the Angular App**:
+   If using `ClusterIP`, it will only be accessible within the cluster. Use a `NodePort` or `LoadBalancer` if you need external access.
+
+4. **Networking Between Pods**:
+   Ensure that your Angular app can communicate with the Python pod. This is generally handled by Kubernetes networking, but make sure the `API_BASE_URL` points to the correct service.
+
+This configuration assumes you’re running both the Angular and Python applications in the same Kubernetes cluster, allowing them to communicate with each other. Adjust ports, resource limits, and other parameters based on your actual application requirements.
