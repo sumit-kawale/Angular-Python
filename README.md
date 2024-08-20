@@ -651,3 +651,184 @@ spec:
    Ensure that your Angular app can communicate with the Python pod. This is generally handled by Kubernetes networking, but make sure the `API_BASE_URL` points to the correct service.
 
 This configuration assumes you’re running both the Angular and Python applications in the same Kubernetes cluster, allowing them to communicate with each other. Adjust ports, resource limits, and other parameters based on your actual application requirements.
+
+5. I have an angular pod and python code pod running on the same context. I want to send a text prompt from Angular pod to Python pod to run python code. Python pod will process on that command and return a CSV file to the angular pod in response
+
+To set up communication between your Angular pod and Python pod, where the Angular pod sends a text prompt to the Python pod, and the Python pod processes the prompt and returns a CSV file, you'll need to do the following:
+
+1. **Create a REST API in the Python pod** that accepts the text prompt, processes it, and returns a CSV file.
+2. **Modify the Angular application** to send the text prompt to the Python pod and handle the CSV file response.
+
+### Step 1: Create a REST API in the Python Pod
+
+Assuming you have a Python application running in your pod, you can use Flask or FastAPI to create a simple API that processes a text prompt and returns a CSV file.
+
+#### Python Flask API Example
+
+1. **Install Flask**:
+
+   ```bash
+   pip install flask pandas
+   ```
+
+2. **Create the Flask API**:
+
+   ```python
+   from flask import Flask, request, jsonify, send_file
+   import pandas as pd
+   import os
+
+   app = Flask(__name__)
+
+   @app.route('/process', methods=['POST'])
+   def process_text():
+       data = request.json
+       text_prompt = data.get('prompt')
+
+       if not text_prompt:
+           return jsonify({'error': 'No prompt provided'}), 400
+
+       # Example processing: Creating a simple CSV file
+       df = pd.DataFrame({'text': [text_prompt], 'length': [len(text_prompt)]})
+       csv_file = '/tmp/output.csv'
+       df.to_csv(csv_file, index=False)
+
+       return send_file(csv_file, as_attachment=True, attachment_filename='output.csv')
+
+   if __name__ == '__main__':
+       app.run(host='0.0.0.0', port=5000)
+   ```
+
+3. **Dockerize the Python Flask Application**:
+
+   Create a `Dockerfile` for the Python pod:
+
+   ```Dockerfile
+   FROM python:3.9-slim
+
+   WORKDIR /app
+
+   COPY requirements.txt requirements.txt
+   RUN pip install -r requirements.txt
+
+   COPY . .
+
+   CMD ["python", "app.py"]
+   ```
+
+   Build and push this Docker image to your container registry.
+
+4. **Deploy the Python Pod**:
+   Ensure the Python pod is running and exposed as a service within your Kubernetes cluster.
+
+### Step 2: Modify the Angular Application to Send a Text Prompt
+
+Now, modify your Angular application to send a POST request with the text prompt to the Python pod's API and handle the CSV response.
+
+#### Angular Service to Communicate with Python Pod
+
+1. **Create an Angular Service**:
+
+   Create a service (e.g., `data.service.ts`) to handle HTTP requests:
+
+   ```typescript
+   import { Injectable } from "@angular/core";
+   import { HttpClient } from "@angular/common/http";
+   import { Observable } from "rxjs";
+
+   @Injectable({
+     providedIn: "root",
+   })
+   export class DataService {
+     private pythonApiUrl = "http://python-pod-service:5000/process"; // Adjust with your Python service URL
+
+     constructor(private http: HttpClient) {}
+
+     sendPrompt(prompt: string): Observable<Blob> {
+       return this.http.post(
+         this.pythonApiUrl,
+         { prompt },
+         { responseType: "blob" }
+       );
+     }
+   }
+   ```
+
+2. **Update Angular Component**:
+
+   Update your component to send the prompt and handle the CSV response:
+
+   ```typescript
+   import { Component } from "@angular/core";
+   import { DataService } from "./data.service";
+
+   @Component({
+     selector: "app-root",
+     templateUrl: "./app.component.html",
+     styleUrls: ["./app.component.css"],
+   })
+   export class AppComponent {
+     prompt: string = "";
+
+     constructor(private dataService: DataService) {}
+
+     onSendPrompt() {
+       this.dataService.sendPrompt(this.prompt).subscribe(
+         (response) => {
+           const blob = new Blob([response], { type: "text/csv" });
+           const url = window.URL.createObjectURL(blob);
+           const a = document.createElement("a");
+           a.href = url;
+           a.download = "output.csv";
+           a.click();
+           window.URL.revokeObjectURL(url);
+         },
+         (error) => {
+           console.error("Error:", error);
+         }
+       );
+     }
+   }
+   ```
+
+3. **Update Angular HTML Template**:
+
+   Add a form to your HTML template for the user to input a prompt:
+
+   ```html
+   <div>
+     <h2>Enter Text Prompt</h2>
+     <input type="text" [(ngModel)]="prompt" placeholder="Enter your prompt" />
+     <button (click)="onSendPrompt()">Send</button>
+   </div>
+   ```
+
+### Step 3: Ensure Kubernetes Services Are Properly Configured
+
+1. **Service for Python Pod**:
+   Make sure the Python pod is exposed as a service within the cluster, accessible by the Angular pod:
+
+   ```yaml
+   apiVersion: v1
+   kind: Service
+   metadata:
+     name: python-pod-service
+   spec:
+     selector:
+       app: python-app
+     ports:
+       - protocol: TCP
+         port: 5000
+         targetPort: 5000
+     type: ClusterIP
+   ```
+
+2. **Networking**:
+   Ensure the Angular pod can communicate with the Python pod via the service name (`python-pod-service` in this example).
+
+### Step 4: Deployment and Testing
+
+- **Deploy the Python and Angular pods** in your Kubernetes cluster.
+- **Test the communication** by sending a prompt from the Angular application and verifying that the CSV file is generated and downloaded as expected.
+
+This setup allows your Angular application to send a text prompt to the Python pod, which processes it and returns a CSV file, all within the same Kubernetes context.
