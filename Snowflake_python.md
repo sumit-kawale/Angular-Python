@@ -1,9 +1,3 @@
-Yes — what you’re doing in the screenshot (turning a pandas DataFrame into a big `VALUES (...) , (...)` clause + `WITH unit_values AS (...)`) works, but it gets painful fast (quoting, NULLs, datetimes, size limits, SQL length limits, performance).
-
-Here are 3 cleaner patterns (pick based on your stack).
-
----
-
 ## 1) Best general approach: write the DataFrame to a **Snowflake TEMP table**, then join it
 
 If you’re using `snowflake-connector-python`, this is the most reliable.
